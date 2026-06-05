@@ -75,13 +75,20 @@ class CommitEngine:
         segments: list[Segment],
         buffer_duration: float,
         ended: bool = False,
+        trailing_silence: bool | None = None,
     ) -> StepResult:
         """Decide what to commit from this transcription of the current buffer.
 
         ``segments`` are timed relative to the buffer start. ``buffer_duration``
-        is the seconds of audio currently buffered (used to detect trailing
-        silence after the last segment). ``ended`` flushes everything, since no
-        further audio is coming.
+        is the seconds of audio currently buffered. ``ended`` flushes
+        everything, since no further audio is coming.
+
+        ``trailing_silence`` says whether the tail of the buffer is acoustically
+        silent — the signal that the last (otherwise in-progress) segment is
+        actually phrase-final and may commit. When None it's inferred from
+        segment timestamps; in production the session supplies a reliable
+        energy-based value, because with ``vad_filter`` off Whisper stretches the
+        last segment's end into the silence and the timestamp gap never opens.
         """
         if not segments:
             # Nothing transcribed. Keep prior confirmation state on a normal
@@ -90,7 +97,9 @@ class CommitEngine:
 
         cur_norm = [normalize(s.text) for s in segments]
 
-        commit_count = self._eligible_count(segments, buffer_duration, ended)
+        commit_count = self._eligible_count(
+            segments, buffer_duration, ended, trailing_silence
+        )
         if self.require_confirmation and not ended:
             commit_count = self._confirmed_prefix(cur_norm, commit_count)
 
@@ -119,18 +128,21 @@ class CommitEngine:
 
     # -- internals ----------------------------------------------------------
     def _eligible_count(
-        self, segments: list[Segment], buffer_duration: float, ended: bool
+        self,
+        segments: list[Segment],
+        buffer_duration: float,
+        ended: bool,
+        trailing_silence: bool | None,
     ) -> int:
         """How many leading segments are stable enough to consider committing."""
         n = len(segments)
         if ended:
             return n
         # All but the last are complete (more speech follows them). The last is
-        # also stable if there's trailing silence after it — a sentence/pause.
-        last_gap = buffer_duration - segments[-1].end
-        if last_gap >= self.min_silence_s:
-            return n
-        return n - 1
+        # also stable once the phrase is finished — i.e. trailing silence.
+        if trailing_silence is None:
+            trailing_silence = (buffer_duration - segments[-1].end) >= self.min_silence_s
+        return n if trailing_silence else n - 1
 
     def _confirmed_prefix(self, cur_norm: list[str], limit: int) -> int:
         """Longest leading run (up to ``limit``) that matches last tick at the

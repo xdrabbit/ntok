@@ -68,6 +68,8 @@ class StreamingSession:
         self.min_commit_s = max(s.get("min_silence_ms", 500) / 1000.0, 0.6)
         self.max_buffer_s = s.get("max_buffer_seconds", 28)
         self.vad_filter = s.get("vad_filter", False)
+        self.silence_rms = s.get("silence_rms", 0.01)
+        self.min_silence_s = s.get("min_silence_ms", 500) / 1000.0
         self.engine = CommitEngine(
             min_silence_s=s.get("min_silence_ms", 500) / 1000.0,
             require_confirmation=s.get("require_confirmation", True),
@@ -120,6 +122,19 @@ class StreamingSession:
         if not self._cancelled:
             self._ingest_and_step(ended=True)
 
+    def _trailing_silence(self) -> bool:
+        """Is the tail of the buffer acoustically silent? Drives phrase commit
+        independently of Whisper's silence-stretched segment timestamps."""
+        win = int(self.min_silence_s * self.sample_rate)
+        if win <= 0 or self._buffer.size < win:
+            return False
+        tail = self._buffer[-win:]
+        recent = float(np.sqrt(np.mean(tail * tail)))
+        overall = float(np.sqrt(np.mean(self._buffer * self._buffer))) or 1e-9
+        # Silent if the tail is quiet in absolute terms or far below the
+        # utterance's own level (so it adapts to a noisy mic floor).
+        return recent < max(self.silence_rms, 0.2 * overall)
+
     def _ingest_and_step(self, ended: bool) -> None:
         new = self.source.drain()
         if new is not None and new.size:
@@ -146,7 +161,10 @@ class StreamingSession:
         self.metrics.tick_compute_s.append(time.monotonic() - t)
 
         segs = [Segment(s, e, txt) for (s, e, txt) in raw]
-        res = self.engine.step(segs, dur, ended=ended)
+        res = self.engine.step(
+            segs, dur, ended=ended,
+            trailing_silence=self._trailing_silence(),
+        )
 
         if relax:
             self.engine.require_confirmation = prev_conf
