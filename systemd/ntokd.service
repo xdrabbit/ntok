@@ -1,0 +1,17 @@
+[Unit]
+Description=ntok dictation daemon (warm Whisper model)
+After=graphical-session.target ydotoold.service
+Wants=ydotoold.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@VENV@/bin/ntok daemon
+Environment=YDOTOOL_SOCKET=%t/.ydotool_socket
+# Keep CUDA libs from the venv discoverable
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
