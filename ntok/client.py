@@ -1,19 +1,23 @@
-"""Thin client that sends a one-shot command to the running daemon."""
+"""Thin client that sends a one-shot command to a running ntok daemon.
+
+Targets either the local Phase 1 daemon (ntok.sock) or the Phase 2 thin-client
+daemon (ntok-client.sock), depending on the socket path passed in.
+"""
 
 from __future__ import annotations
 
 import socket
 import sys
+from pathlib import Path
 
 from .daemon import socket_path
 
 
-def send(command: str, timeout: float = 5.0) -> str:
-    path = socket_path()
+def send(command: str, timeout: float = 5.0, path: Path | None = None) -> str:
+    path = path or socket_path()
     if not path.exists():
         raise ConnectionError(
-            "ntokd not running. Start it with `systemctl --user start ntokd` "
-            "or `ntok daemon`."
+            f"daemon not running (no socket at {path}). Start it first."
         )
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
@@ -32,9 +36,9 @@ def send(command: str, timeout: float = 5.0) -> str:
         s.close()
 
 
-def main(command: str) -> int:
+def main(command: str, path: Path | None = None) -> int:
     try:
-        print(send(command))
+        print(send(command, path=path))
         return 0
     except Exception as e:  # noqa: BLE001
         print(f"ntok: {e}", file=sys.stderr)

@@ -56,6 +56,16 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "sound": True,
         "notify": True,
     },
+    "net": {
+        # Server (blackbird) bind address. Use "0.0.0.0" to serve the LAN.
+        "host": "127.0.0.1",
+        "port": 8765,
+        "token": "",               # shared secret; REQUIRED — server won't serve empty
+        # Client (each seat) — where to reach the server.
+        "server_host": "127.0.0.1",
+        "server_port": 8765,
+        "sample_rate": 16000,
+    },
 }
 
 
@@ -125,4 +135,15 @@ capitalize_first = false
 [feedback]
 sound = true
 notify = true
+
+[net]
+# Server (blackbird). Set token to a shared secret; the server refuses to run
+# without one. Use host = "0.0.0.0" to serve other seats on the LAN.
+host = "127.0.0.1"
+port = 8765
+token = ""
+# Client (each seat) — where to reach the server, and your mic rate.
+server_host = "127.0.0.1"
+server_port = 8765
+sample_rate = 16000
 """

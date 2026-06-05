@@ -78,8 +78,8 @@ Bind a hotkey to dictate:
 Then: press the key, talk, press it again → text appears where your cursor is.
 
 Useful:
-  ntok status          # idle | recording | transcribing | loading
-  ntok cancel          # discard the current recording
+  ntok status          # idle | loading | streaming N commits / N words | finalizing
+  ntok cancel          # discard the current dictation
   journalctl --user -u ntokd -f   # watch the daemon log
   edit ~/.config/ntok/config.toml then: systemctl --user restart ntokd
 ─────────────────────────────────────────────────────────────────────────

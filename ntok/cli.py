@@ -1,11 +1,15 @@
 """ntok command-line entry point.
 
-    ntok toggle     # start, or stop+transcribe+type (bind this to a hotkey)
-    ntok start
-    ntok stop
-    ntok cancel
-    ntok status
-    ntok daemon     # run the foreground daemon (systemd uses this)
+Local (Phase 1) — transcribe + type on this machine:
+    ntok toggle     # start, or stop+flush (bind this to a hotkey)
+    ntok start | stop | cancel | status
+    ntok daemon     # run the local daemon (systemd uses this)
+
+Networked (Phase 2) — central GPU on blackbird, thin seats everywhere:
+    ntok server         # run the transcription server (on blackbird)
+    ntok client-daemon  # run the thin seat daemon (on each machine)
+    ntok client toggle  # control the seat daemon (bind this to a hotkey)
+    ntok client start | stop | cancel | status
 """
 
 from __future__ import annotations
@@ -27,6 +31,21 @@ def main() -> int:
     if cmd == "daemon":
         from .daemon import run
         return run()
+    if cmd == "server":
+        from .net.server import run
+        return run()
+    if cmd == "client-daemon":
+        from .net.client_daemon import run
+        return run()
+    if cmd == "client":
+        sub = args[1] if len(args) > 1 else ""
+        if sub not in CLIENT_COMMANDS:
+            print(f"ntok client: unknown command {sub!r}\n", file=sys.stderr)
+            print(USAGE, file=sys.stderr)
+            return 1
+        from .client import main as client_main
+        from .net.client_daemon import client_socket_path
+        return client_main(sub, path=client_socket_path())
     if cmd in CLIENT_COMMANDS:
         from .client import main as client_main
         return client_main(cmd)

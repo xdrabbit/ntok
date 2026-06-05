@@ -1,0 +1,16 @@
+[Unit]
+Description=ntok transcription server (central GPU on blackbird)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@VENV@/bin/ntok server
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=2
+
+# This is a headless server (no GUI). To keep it running without an active
+# login session, enable lingering once:  loginctl enable-linger $USER
+[Install]
+WantedBy=default.target

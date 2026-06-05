@@ -119,6 +119,9 @@ What it *can't* test is the felt experience: do the manual mic smoke test below.
   that commits without two-tick confirmation. Watch for it in the smoke test.
 - **Latency tracks GPU load.** First-commit lag is ~1 s on a free GPU but
   degrades when the card is saturated by other jobs.
+- **macOS seat is unverified on hardware.** The protocol/server/client path is
+  tested end-to-end on blackbird, but the macOS mic (ffmpeg/avfoundation) and
+  injection (AppleScript) adapters have not been run on a real Mac yet.
 
 ### Manual smoke test
 
@@ -127,13 +130,67 @@ paragraph — include deliberate mid-sentence pauses and one long run-on sentenc
 Watch text land phrase-by-phrase; check the pause/run-on boundaries for dropped
 or duplicated words. Toggle off to flush the tail.
 
+## Networked seats (Phase 2)
+
+Serve every seat on the LAN from blackbird's GPU. A thin client on each machine
+captures the mic and streams it to a transcription server on blackbird; the
+server runs the *same* CommitEngine per connection and streams committed text
+back, which the client types locally. Injection is app-agnostic on both ends —
+web (Claude in Chrome) and standalone (the Claude desktop app) both just work,
+because keystrokes go to whatever window has focus.
+
+```
+seat (mic) ──audio──▶ ntok server (blackbird GPU) ──committed text──▶ seat (types locally)
+```
+
+### Server (on blackbird)
+
+1. Set a shared secret in `~/.config/ntok/config.toml`:
+   ```toml
+   [net]
+   host = "0.0.0.0"            # serve the LAN (use 127.0.0.1 for local-only)
+   port = 8765
+   token = "PASTE-A-SECRET"   # e.g. output of: openssl rand -hex 32
+   ```
+2. Run it: `ntok server` (or install `systemd/ntok-server.service`; for an
+   always-on headless box, `loginctl enable-linger $USER`).
+
+### Seat (each machine — Linux or Mac)
+
+Put the **same** token and the server's address in that machine's config:
+```toml
+[net]
+server_host = "blackbird.local"   # or its LAN IP
+server_port = 8765
+token = "PASTE-THE-SAME-SECRET"
+```
+Run the seat daemon and bind a hotkey to the toggle:
+```bash
+ntok client-daemon       # the thin seat (systemd: ntok-client.service on Linux)
+ntok client toggle       # bind your OS hotkey to this
+ntok client status|stop|cancel
+```
+
+- **Linux seat** — reuses ydotool injection and parec mic capture (run
+  `install.sh` first for ydotool/uinput).
+- **macOS seat** — captures via ffmpeg/avfoundation and injects via AppleScript
+  `System Events`. You must: `brew install ffmpeg`; grant your terminal (or
+  whatever runs `ntok client-daemon`) **Microphone** and **Accessibility**
+  permissions; and set `[audio].source` to your mic's avfoundation index
+  (list with `ffmpeg -f avfoundation -list_devices true -i ""`). Bind the hotkey
+  to `ntok client toggle` via Shortcuts/Automator/Karabiner. *(These macOS
+  adapters are written but not yet hardware-tested — see Known limitations.)*
+
+The network path itself (auth, framing, streaming, accuracy) is verified
+end-to-end on blackbird via `tests/test_net_acceptance.py` (real model over a
+loopback socket).
+
 ## Roadmap
 
-**Phase 1 (this):** streaming, commit-only dictation on a single machine.
+**Done:** Phase 1 (local streaming dictation) and the Phase 2 client/server split
+with shared-secret auth and serialized multi-seat GPU access.
 
-**Phase 2:** serve every seat on the LAN from the GPU box — a thin per-seat
-client streams mic audio to a transcription server on blackbird and injects
-locally. The audio source and inject sink are already injected dependencies, so
-this is additive. Also planned: shared-secret auth, a request queue for
-concurrent seats, a local-agreement sliding window for finer-grained commits,
-and voice commands.
+**Next:** verify the macOS seat on real hardware; a local-agreement sliding
+window for finer-grained commits (also the structural fix for the end-of-
+utterance hallucination); a request queue / fairness across many simultaneous
+seats; and voice commands.

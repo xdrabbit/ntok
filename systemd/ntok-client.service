@@ -1,0 +1,16 @@
+[Unit]
+Description=ntok thin dictation client (streams to the blackbird server)
+After=graphical-session.target ydotoold.service
+Wants=ydotoold.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@VENV@/bin/ntok client-daemon
+Environment=YDOTOOL_SOCKET=%t/.ydotool_socket
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
