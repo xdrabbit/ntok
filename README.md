@@ -44,8 +44,8 @@ This forgoes live revisable words, but delivers continuous flow and is robust.
 ./install.sh          # creates .venv, installs ntok + CUDA libs, sets up systemd
 ```
 
-First run downloads the model weights from Hugging Face (large-v3 ≈ 3 GB). Then
-bind a desktop keyboard shortcut to:
+First run downloads the streaming model weights from Hugging Face
+(distil-large-v3 ≈ 1.5 GB). Then bind a desktop keyboard shortcut to:
 
 ```bash
 ntok toggle
@@ -72,11 +72,14 @@ tick_ms = 500              # how often the buffer is re-transcribed
 min_silence_ms = 500       # trailing silence that ends a phrase and commits it
 require_confirmation = true # commit only after two ticks agree (recommended)
 vad_filter = false         # keep segment timestamps stable for buffer-cut math
+silence_rms = 0.01         # tail RMS below this counts as a phrase-ending pause
 max_buffer_seconds = 28    # safety net below Whisper's 30 s window
-model = ""                 # optional override, e.g. "large-v3-turbo"; "" = [model].name
+model = "distil-large-v3"  # streaming model (fast, low VRAM); "" = use [model].name
 ```
 
-For lower latency on a busy GPU, set `model = "large-v3-turbo"` in `[stream]`.
+`distil-large-v3` is the default streaming model: near-large-v3 accuracy, ~12×
+faster, and it fits in ~2 GB of VRAM so it coexists with other GPU jobs. For
+maximum accuracy on an idle GPU, set `model = "large-v3"` (needs ~4 GB free).
 
 ## Testing
 
@@ -95,12 +98,27 @@ Two tiers (see `tests/`):
   (WER ≤ 0.15), and commits with low lag.
 
   ```bash
-  ./.venv/bin/pytest -m acceptance            # uses [model].name (large-v3)
+  ./.venv/bin/pytest -m acceptance            # uses the [stream] model (distil-large-v3)
   NTOK_TEST_MODEL=small.en ./.venv/bin/pytest -m acceptance   # fast iteration
   ```
 
+  Measured on an (uncontended) RTX 3090 with distil-large-v3: WER **0.089**,
+  first-commit lag **0.88 s**, median tick compute **0.12 s**, 4 commits over a
+  ~21 s clip. (Under a fully saturated GPU, tick compute rises to ~1.4 s and
+  first-commit lag drifts toward the 3 s bound — a real shared-GPU caveat.)
+
 The acceptance test stubs only the mic and ydotool — the Whisper engine is real.
 What it *can't* test is the felt experience: do the manual mic smoke test below.
+
+## Known limitations
+
+- **End-of-utterance hallucination.** Whisper occasionally appends a stock
+  closing ("Thank you.") to the final-flush buffer. The trailing-silence trim
+  mitigates the common case (you pause before toggling off); the structural fix
+  is the Phase 2 local-agreement upgrade, since the final flush is the one path
+  that commits without two-tick confirmation. Watch for it in the smoke test.
+- **Latency tracks GPU load.** First-commit lag is ~1 s on a free GPU but
+  degrades when the card is saturated by other jobs.
 
 ### Manual smoke test
 

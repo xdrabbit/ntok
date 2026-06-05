@@ -162,7 +162,9 @@ class CommitEngine:
         optionally capitalizes the very first character of the session."""
         phrase = dedup_overlap(self.committed_text, text.strip(), self.max_overlap_tokens)
         phrase = phrase.strip()
-        if not phrase:
+        # Drop empties and punctuation-only hallucinations (". . .", "...") that
+        # Whisper emits over near-silence — they carry no real word tokens.
+        if not phrase or not normalize(phrase):
             return ""
         if not self._emitted:
             if self.capitalize_first:

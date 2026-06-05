@@ -41,7 +41,9 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "vad_filter": False,       # keep timestamps stable for buffer-cut math
         "silence_rms": 0.01,       # tail RMS below this = phrase-ending silence
         "max_buffer_seconds": 28,  # safety net below Whisper's 30 s window
-        "model": "",               # optional model override; "" = use [model].name
+        # distil-large-v3 streams within latency, near-large-v3 accuracy, and
+        # fits in ~2 GB VRAM (shares a busy GPU). Set "" to use [model].name.
+        "model": "distil-large-v3",
     },
     "inject": {
         "method": "type",          # "type" (universal) | "paste" (fast, uses clipboard)
@@ -111,7 +113,7 @@ require_confirmation = true # commit a phrase only after two ticks agree (safer)
 vad_filter = false         # keep segment timestamps stable for buffer-cut math
 silence_rms = 0.01         # tail RMS below this counts as a phrase-ending pause
 max_buffer_seconds = 28    # safety net below Whisper's 30 s attention window
-model = ""                 # optional override, e.g. "large-v3-turbo"; "" = [model].name
+model = "distil-large-v3"  # streaming model (fast, low VRAM); "" = use [model].name
 
 [inject]
 method = "type"          # type | paste

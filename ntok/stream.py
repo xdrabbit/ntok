@@ -135,10 +135,21 @@ class StreamingSession:
         # utterance's own level (so it adapts to a noisy mic floor).
         return recent < max(self.silence_rms, 0.2 * overall)
 
+    def _trim_trailing_silence(self, buf: np.ndarray) -> np.ndarray:
+        """Drop a silent tail so the final flush doesn't transcribe pure silence
+        (Whisper hallucinates phrases like 'Thank you.' over it)."""
+        loud = np.flatnonzero(np.abs(buf) > self.silence_rms)
+        if loud.size == 0:
+            return buf[:0]
+        end = min(buf.size, int(loud[-1]) + int(0.2 * self.sample_rate))
+        return buf[:end]
+
     def _ingest_and_step(self, ended: bool) -> None:
         new = self.source.drain()
         if new is not None and new.size:
             self._buffer = np.concatenate([self._buffer, new])
+        if ended:
+            self._buffer = self._trim_trailing_silence(self._buffer)
         dur = self._buffer.size / self.sample_rate
         if self._buffer.size == 0:
             return

@@ -65,9 +65,14 @@ class RealtimeWav:
 
 def _cfg():
     cfg = config.load()
-    model = os.environ.get("NTOK_TEST_MODEL")
-    if model:
-        cfg["model"]["name"] = model
+    # Validate the model the daemon actually streams with: env override, else the
+    # configured stream model, else the batch model.
+    model = (
+        os.environ.get("NTOK_TEST_MODEL")
+        or cfg["stream"].get("model")
+        or cfg["model"]["name"]
+    )
+    cfg["model"]["name"] = model
     cfg["feedback"] = {"sound": False, "notify": False}
     return cfg
 

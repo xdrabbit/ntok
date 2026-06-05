@@ -154,6 +154,13 @@ def test_lone_segment_commits_only_with_trailing_silence():
 
 # --- end-of-audio flush ----------------------------------------------------
 
+def test_punctuation_only_hallucination_is_dropped():
+    eng = CommitEngine(min_silence_s=0.5, require_confirmation=False)
+    r = eng.step([Segment(0.0, 1.0, " . . . . .")], buffer_duration=1.0, ended=True)
+    assert r.deltas == []
+    assert eng.committed_text == ""
+
+
 def test_ended_flushes_without_requiring_confirmation():
     eng = CommitEngine(min_silence_s=0.5)
     r = eng.step([Segment(0.0, 1.0, "final words here")],
