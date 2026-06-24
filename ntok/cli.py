@@ -3,6 +3,7 @@
 Local (Phase 1) — transcribe + type on this machine:
     ntok toggle     # start, or stop+flush (bind this to a hotkey)
     ntok start | stop | cancel | status
+    ntok sources    # list microphone inputs for config
     ntok daemon     # run the local daemon (systemd uses this)
 
 Networked (Phase 2) — central GPU on blackbird, thin seats everywhere:
@@ -28,6 +29,20 @@ def main() -> int:
         return 0
 
     cmd = args[0]
+    if cmd in {"sources", "mics", "list-sources"}:
+        from .audio import list_input_sources
+        srcs = list_input_sources()
+        if not srcs:
+            print("No input sources found. Ensure PipeWire/PulseAudio is running.")
+            print("Try: pactl list short sources")
+            return 0
+        print("Available microphone sources (set [audio].source in config):")
+        for s in srcs:
+            print(f"  {s['name']}")
+            if s.get("description") and s["description"] != s["name"]:
+                print(f"      ({s['description']})")
+        print("\nUse the 'name' (e.g. alsa_input... ) as source = \"...\" ")
+        return 0
     if cmd == "daemon":
         from .daemon import run
         return run()

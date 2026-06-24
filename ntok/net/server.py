@@ -180,8 +180,9 @@ def run() -> int:
               "(shared secret); refusing to serve without one.", file=sys.stderr)
         return 1
     # Use the low-VRAM, fast streaming model by default (same as the daemon).
-    if cfg["stream"].get("model"):
-        cfg["model"]["name"] = cfg["stream"]["model"]
+    if (cfg.get("model", {}).get("backend") or "faster-whisper") != "openai":
+        if cfg["stream"].get("model"):
+            cfg["model"]["name"] = cfg["stream"]["model"]
     srv = Server(cfg)
     print(f"[ntok-server] loading model {cfg['model']['name']}…",
           file=sys.stderr, flush=True)

@@ -40,9 +40,11 @@ class Daemon:
     def __init__(self):
         self.cfg = config.load()
         # Optional streaming model override (e.g. a faster model for low latency).
-        stream_model = self.cfg["stream"].get("model")
-        if stream_model:
-            self.cfg["model"]["name"] = stream_model
+        # Only for local backend; for openai the name is the api model id (whisper-1).
+        if (self.cfg.get("model", {}).get("backend") or "faster-whisper") != "openai":
+            stream_model = self.cfg["stream"].get("model")
+            if stream_model:
+                self.cfg["model"]["name"] = stream_model
         self.recorder = Recorder(
             sample_rate=self.cfg["audio"]["sample_rate"],
             source=self.cfg["audio"]["source"],
@@ -61,7 +63,13 @@ class Daemon:
         if self.session is not None:
             m = self.session.metrics
             words = len(self.session.transcript.split())
-            return f"streaming {m.commit_count} commits / {words} words"
+            base = f"streaming {m.commit_count} commits / {words} words"
+            try:
+                rms = self.recorder.recent_rms()
+                hearing = " (hearing)" if rms > 0.015 else ""
+            except Exception:
+                hearing = ""
+            return base + hearing
         if self.busy:
             return "finalizing"
         return "idle"
@@ -101,6 +109,7 @@ class Daemon:
     def _finalize(self) -> None:
         self.busy = True
         session = self.session
+        cont = bool(self.cfg.get("stream", {}).get("continuous_listen"))
         try:
             self.recorder.stop_capture()  # stop mic, keep the buffered tail
             text = session.stop() if session else ""
@@ -112,6 +121,12 @@ class Daemon:
         finally:
             self.session = None
             self.busy = False
+        if cont:
+            # Re-arm for continuous hands-free listening
+            try:
+                self.cmd_start()
+            except Exception:
+                pass
 
     def cmd_cancel(self) -> str:
         if self.session is None:

@@ -74,6 +74,21 @@ def _cfg():
     )
     cfg["model"]["name"] = model
     cfg["feedback"] = {"sound": False, "notify": False}
+    # Force ultra-aggressive low-latency params + fast model for this run.
+    model = (
+        os.environ.get("NTOK_TEST_MODEL")
+        or "large-v3-turbo"
+    )
+    cfg["model"]["name"] = model
+    cfg["model"]["backend"] = "faster-whisper"  # use local for test (no API key)
+    s = cfg.setdefault("stream", {})
+    s["tick_ms"] = 200
+    s["min_silence_ms"] = 250
+    s["silence_rms"] = 0.006
+    s["final_vad_filter"] = True
+    s["vad_filter"] = False
+    s["require_confirmation"] = True
+    cfg["transcribe"]["beam_size"] = 2
     return cfg
 
 

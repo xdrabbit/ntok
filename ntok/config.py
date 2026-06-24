@@ -16,13 +16,13 @@ CONFIG_PATH = CONFIG_DIR / "config.toml"
 
 DEFAULTS: dict[str, dict[str, Any]] = {
     "model": {
-        # large-v3 is the most accurate; on a 3090 it loads in a few seconds and
-        # transcribes a sentence in well under a second. Swap to "distil-large-v3"
-        # or "small.en" for lower latency / VRAM.
+        # local: large-v3 (most accurate), large-v3-turbo, distil-large-v3 (fast streaming)
+        # For API backend set backend="openai" (uses model.name e.g. "whisper-1")
         "name": "large-v3",
         "device": "cuda",          # "cuda" | "cpu"
         "compute_type": "float16", # float16 on GPU; use int8 on CPU
         "language": "en",          # "" for auto-detect (slower)
+        "backend": "faster-whisper",  # "faster-whisper" (local GPU, recommended) | "openai" | "grok" (xAI)
     },
     "audio": {
         "sample_rate": 16000,
@@ -30,20 +30,22 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "max_seconds": 300,        # hard cap on a single dictation
     },
     "transcribe": {
-        "vad_filter": True,        # Silero VAD trims silence -> faster + cleaner
-        "beam_size": 5,
+        "vad_filter": True,        # Silero VAD trims silence -> faster + cleaner (local only)
+        "beam_size": 1,  # maximum speed (accuracy is secondary for real-time dictation)
         "initial_prompt": "",      # bias vocabulary, e.g. proper nouns you use
+        "openai_model": "whisper-1",  # for backend=openai
+        "grok_model": "grok-stt",  # for backend=grok; use grok-stt or latest
     },
     "stream": {
-        "tick_ms": 500,            # how often the buffer is re-transcribed
-        "min_silence_ms": 500,     # trailing silence that ends a phrase -> commit
-        "require_confirmation": True,  # commit a phrase only after 2 ticks agree
-        "vad_filter": False,       # keep timestamps stable for buffer-cut math
-        "silence_rms": 0.01,       # tail RMS below this = phrase-ending silence
-        "max_buffer_seconds": 28,  # safety net below Whisper's 30 s window
-        # distil-large-v3 streams within latency, near-large-v3 accuracy, and
-        # fits in ~2 GB VRAM (shares a busy GPU). Set "" to use [model].name.
-        "model": "distil-large-v3",
+        "tick_ms": 100,            # very frequent checks for snappy phrase commits
+        "min_silence_ms": 150,     # short pause after last word → write fast
+        "require_confirmation": False,  # no confirmation delay
+        "vad_filter": False,
+        "silence_rms": 0.01,
+        "max_buffer_seconds": 28,
+        "model": "large-v3-turbo",  # excellent speed/quality for low-latency streaming
+        "continuous_listen": False,
+        "final_vad_filter": True,
     },
     "inject": {
         "method": "type",          # "type" (universal) | "paste" (fast, uses clipboard)
@@ -57,11 +59,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "notify": True,
     },
     "net": {
-        # Server (blackbird) bind address. Use "0.0.0.0" to serve the LAN.
-        "host": "127.0.0.1",
+        # Server bind address. Default to 0.0.0.0 so it's accessible to all machines on the LAN.
+        # Set to 127.0.0.1 if you only want local.
+        "host": "0.0.0.0",
         "port": 8765,
         "token": "",               # shared secret; REQUIRED — server won't serve empty
-        # Client (each seat) — where to reach the server.
+        # Client (each seat) — where to reach the server (use blackbird.local or LAN IP).
         "server_host": "127.0.0.1",
         "server_port": 8765,
         "sample_rate": 16000,
@@ -101,10 +104,12 @@ _DEFAULT_TOML = """\
 #   systemctl --user restart ntokd
 
 [model]
-name = "large-v3"        # large-v3 | distil-large-v3 | medium | small.en | base.en
+name = "large-v3-turbo"  # local: large-v3-turbo (fast) | distil-large-v3 | small.en ; api: whisper-1
 device = "cuda"          # cuda | cpu
 compute_type = "float16" # float16 (gpu) | int8 (cpu) | int8_float16
 language = "en"          # "" for auto-detect
+backend = "faster-whisper"  # faster-whisper (local GPU, best for low latency on your machine) | openai | grok (xAI)
+# If using grok or openai, set the key via env var or [net] section below
 
 [audio]
 sample_rate = 16000
@@ -113,17 +118,21 @@ max_seconds = 300
 
 [transcribe]
 vad_filter = true
-beam_size = 5
+beam_size = 1            # max speed (accuracy secondary)
 initial_prompt = ""      # e.g. "Kubernetes, Postgres, ntok" to bias spelling
+openai_model = "whisper-1"
+grok_model = "grok-stt"
 
 [stream]
-tick_ms = 500              # how often the rolling buffer is re-transcribed
-min_silence_ms = 500       # trailing silence that ends a phrase and commits it
-require_confirmation = true # commit a phrase only after two ticks agree (safer)
-vad_filter = false         # keep segment timestamps stable for buffer-cut math
-silence_rms = 0.01         # tail RMS below this counts as a phrase-ending pause
-max_buffer_seconds = 28    # safety net below Whisper's 30 s attention window
-model = "distil-large-v3"  # streaming model (fast, low VRAM); "" = use [model].name
+tick_ms = 100              # very frequent checks → snappy response
+min_silence_ms = 150       # short pause after last word → commit & write fast
+require_confirmation = false
+vad_filter = false
+silence_rms = 0.01
+max_buffer_seconds = 28
+model = "large-v3-turbo"   # great speed/quality balance for dictation
+continuous_listen = false
+final_vad_filter = true
 
 [inject]
 method = "type"          # type | paste
@@ -137,13 +146,21 @@ sound = true
 notify = true
 
 [net]
-# Server (blackbird). Set token to a shared secret; the server refuses to run
-# without one. Use host = "0.0.0.0" to serve other seats on the LAN.
-host = "127.0.0.1"
+# Server. Use host = "0.0.0.0" to serve all machines on the LAN (default now).
+# Set token to a shared secret (REQUIRED).
+host = "0.0.0.0"
 port = 8765
 token = ""
-# Client (each seat) — where to reach the server, and your mic rate.
+# Client (each seat) — point to the server (use hostname or LAN IP) and your mic rate.
 server_host = "127.0.0.1"
 server_port = 8765
 sample_rate = 16000
+
+# API keys for cloud transcription backends (used when [model].backend = "openai" or "grok")
+# Preferred way: set as environment variables instead:
+#   export XAI_API_KEY=sk-...          # for backend=grok
+#   export OPENAI_API_KEY=sk-...       # for backend=openai
+xai_key = ""
+grok_key = ""
+openai_key = ""
 """

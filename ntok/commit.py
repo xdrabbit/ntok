@@ -55,7 +55,7 @@ class CommitEngine:
     def __init__(
         self,
         *,
-        min_silence_s: float = 0.5,
+        min_silence_s: float = 0.35,
         require_confirmation: bool = True,
         capitalize_first: bool = False,
         max_overlap_tokens: int = 8,

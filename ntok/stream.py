@@ -64,12 +64,13 @@ class StreamingSession:
         self.cfg = cfg
         s = cfg.get("stream", {})
         self.sample_rate = cfg["audio"]["sample_rate"]
-        self.tick_s = s.get("tick_ms", 500) / 1000.0
-        self.min_commit_s = max(s.get("min_silence_ms", 500) / 1000.0, 0.6)
+        self.tick_s = s.get("tick_ms", 300) / 1000.0
+        self.min_commit_s = max(s.get("min_silence_ms", 350) / 1000.0, 0.35)
         self.max_buffer_s = s.get("max_buffer_seconds", 28)
         self.vad_filter = s.get("vad_filter", False)
-        self.silence_rms = s.get("silence_rms", 0.01)
-        self.min_silence_s = s.get("min_silence_ms", 500) / 1000.0
+        self.final_vad_filter = s.get("final_vad_filter", True)
+        self.silence_rms = s.get("silence_rms", 0.008)
+        self.min_silence_s = s.get("min_silence_ms", 350) / 1000.0
         self.engine = CommitEngine(
             min_silence_s=s.get("min_silence_ms", 500) / 1000.0,
             require_confirmation=s.get("require_confirmation", True),
@@ -95,7 +96,8 @@ class StreamingSession:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=30)
-        return self.engine.committed_text
+        txt = self.engine.committed_text
+        return self._strip_halluc(txt)
 
     def cancel(self) -> None:
         """Abort: discard the uncommitted tail, emit nothing further."""
@@ -107,6 +109,58 @@ class StreamingSession:
     @property
     def transcript(self) -> str:
         return self.engine.committed_text
+
+    _HALLUC_END = (
+        "thank you", "thank you.", "thanks", "thank you for watching", "thanks for watching",
+        "bye", "okay", "ok", "i don't know", "i dont know", "you", "the end", "that's it",
+        "all right", "alright", "goodbye", "have a good day", "see you", "end of message",
+        "i'm sorry", "im sorry", "sorry", "hello", "hi there", "excuse me"
+    )
+
+    def _strip_halluc(self, txt: str) -> str:
+        """Aggressively remove common hallucinations and junk phrases that models
+        emit on silence/low confidence (thank you, sorry, URLs, "for more info", etc).
+        Applied to every segment for complete elimination of repetitive bad endings."""
+        t = txt.strip()
+        if not t:
+            return t
+        junk_phrases = [
+            "for more information", "visit www", "www.", "call now", "subscribe",
+            "like and subscribe", "check the description", "thank you for your attention"
+        ]
+        changed = True
+        iterations = 0
+        while changed and t and iterations < 5:
+            changed = False
+            iterations += 1
+            low = t.lower()
+            for h in junk_phrases:
+                if h in low:
+                    idx = low.find(h)
+                    before = t[:idx].rstrip(" ,.!?")
+                    after = t[idx+len(h):].lstrip(" ,.!?")
+                    t = (before + " " + after).strip() if before and after else (before or after)
+                    changed = True
+                    low = t.lower()
+            for h in self._HALLUC_END:
+                if low.endswith(h):
+                    t = t[: -len(h)].rstrip(" ,.!?")
+                    changed = True
+                    break
+        # Drop leading short fillers too (e.g. model saying "Hello." or "Listen." on silence gaps)
+        for _ in range(3):
+            low = t.lower().lstrip()
+            for f in ["hello", "hi", "hey", "listen", "well", "so", "um", "uh"]:
+                if low.startswith(f + " ") or low == f or low.startswith(f + ".") or low.startswith(f + ","):
+                    t = t[len(f):].lstrip(" .,")
+        low3 = t.lower().strip(".,!? ")
+        fillers = {"i", "a", "the", "um", "uh", "ah", "er", "hmm", "mhm", "im", "i'm", "hello", "hi", "listen"}
+        if len(low3) <= 3 or low3 in fillers or not any(c.isalpha() for c in low3):
+            return ""
+        return t.strip()
+
+    # Back-compat alias
+    _clean_final = _strip_halluc
 
     # -- worker -------------------------------------------------------------
     def _worker(self) -> None:
@@ -125,23 +179,37 @@ class StreamingSession:
     def _trailing_silence(self) -> bool:
         """Is the tail of the buffer acoustically silent? Drives phrase commit
         independently of Whisper's silence-stretched segment timestamps."""
-        win = int(self.min_silence_s * self.sample_rate)
-        if win <= 0 or self._buffer.size < win:
+        # Use a short fixed window (150ms) for quick end-of-speech detection to
+        # minimize delay from last word to commit. The min_silence_s is still
+        # used for the "phrase end" logic in engine.
+        short_win = int(0.15 * self.sample_rate)
+        if short_win <= 0 or self._buffer.size < short_win:
             return False
-        tail = self._buffer[-win:]
+        tail = self._buffer[-short_win:]
         recent = float(np.sqrt(np.mean(tail * tail)))
         overall = float(np.sqrt(np.mean(self._buffer * self._buffer))) or 1e-9
-        # Silent if the tail is quiet in absolute terms or far below the
-        # utterance's own level (so it adapts to a noisy mic floor).
-        return recent < max(self.silence_rms, 0.2 * overall)
+        # More aggressive threshold (0.4 * overall) + short window for low latency.
+        return recent < max(self.silence_rms, 0.4 * overall)
 
     def _trim_trailing_silence(self, buf: np.ndarray) -> np.ndarray:
         """Drop a silent tail so the final flush doesn't transcribe pure silence
         (Whisper hallucinates phrases like 'Thank you.' over it)."""
+        if buf.size == 0:
+            return buf
         loud = np.flatnonzero(np.abs(buf) > self.silence_rms)
         if loud.size == 0:
-            return buf[:0]
-        end = min(buf.size, int(loud[-1]) + int(0.2 * self.sample_rate))
+            # Very quiet buffer: drop almost everything (keep tiny safety head)
+            keep = int(0.15 * self.sample_rate)
+            return buf[:max(0, buf.size - keep)]
+        # Trim past the last loud sample + a small grace (less grace than before)
+        end = min(buf.size, int(loud[-1]) + int(0.08 * self.sample_rate))
+        # Also drop any trailing low-energy tail beyond last "real" energy
+        tail_start = int(0.6 * self.sample_rate)
+        if buf.size > tail_start:
+            tail = buf[-tail_start:]
+            tail_loud = np.flatnonzero(np.abs(tail) > self.silence_rms * 0.6)
+            if tail_loud.size > 0:
+                end = min(end, buf.size - (tail_start - int(tail_loud[-1])))
         return buf[:end]
 
     def _ingest_and_step(self, ended: bool) -> None:
@@ -164,17 +232,34 @@ class StreamingSession:
         if relax:
             self.engine.require_confirmation = False
 
+        # Use VAD on flush if configured. Always use a (mild) anti-closing prompt
+        # to discourage the model from "finishing" a buffer that ends in silence with
+        # stock phrases like "thank you".
+        if ended:
+            use_vf = self.final_vad_filter
+        else:
+            use_vf = self.vad_filter
+        anti = " Speak naturally. Do not add thank you, thanks, or closing phrases at sentence ends."
+        final_prompt = (self.engine.prompt() + anti).strip()
+
         t = time.monotonic()
         raw = self.transcriber.transcribe_segments(
-            self._buffer, initial_prompt=self.engine.prompt(),
-            vad_filter=self.vad_filter,
+            self._buffer, initial_prompt=final_prompt,
+            vad_filter=use_vf,
         )
         self.metrics.tick_compute_s.append(time.monotonic() - t)
 
         segs = [Segment(s, e, txt) for (s, e, txt) in raw]
+        # Aggressively strip known hallucinations from *all* segments (not just tail)
+        # to completely eliminate repetitive "thank you", "sorry", junk URLs, etc.
+        for i in range(len(segs)):
+            cleaned = self._strip_halluc(segs[i].text)
+            if cleaned != segs[i].text:
+                segs[i] = Segment(segs[i].start, segs[i].end, cleaned)
+        trailing = self._trailing_silence() or ended
         res = self.engine.step(
             segs, dur, ended=ended,
-            trailing_silence=self._trailing_silence(),
+            trailing_silence=trailing,
         )
 
         if relax:

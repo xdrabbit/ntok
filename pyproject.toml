@@ -17,6 +17,16 @@ dev = [
     "pytest>=7",
     "soundfile>=0.12",  # read/write the acceptance-test WAV fixture
 ]
+# For [model] backend = "openai" (max accuracy, sends audio to API):
+#   pip install openai
+#   export OPENAI_API_KEY=...
+# For backend = "grok" (xAI Grok STT - low latency real-time, recommended):
+#   pip install requests
+#   export XAI_API_KEY=sk-...          # or put xai_key / grok_key under [net] in config.toml
+api = [
+    "openai>=1.0",
+    "requests>=2.0",
+]
 
 [project.scripts]
 ntok = "ntok.cli:main"

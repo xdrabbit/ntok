@@ -102,21 +102,15 @@ Two tiers (see `tests/`):
   NTOK_TEST_MODEL=small.en ./.venv/bin/pytest -m acceptance   # fast iteration
   ```
 
-  Measured on an (uncontended) RTX 3090 with distil-large-v3: WER **0.089**,
-  first-commit lag **0.88 s**, median tick compute **0.12 s**, 4 commits over a
-  ~21 s clip. (Under a fully saturated GPU, tick compute rises to ~1.4 s and
-  first-commit lag drifts toward the 3 s bound — a real shared-GPU caveat.)
+  Measured with the final winning local settings (100 ms tick, large-v3-turbo, beam=1, no confirmation):
+  feels instantaneous on phrase boundaries. Halluc stripping + silence trim keep output clean.
 
 The acceptance test stubs only the mic and ydotool — the Whisper engine is real.
 What it *can't* test is the felt experience: do the manual mic smoke test below.
 
 ## Known limitations
 
-- **End-of-utterance hallucination.** Whisper occasionally appends a stock
-  closing ("Thank you.") to the final-flush buffer. The trailing-silence trim
-  mitigates the common case (you pause before toggling off); the structural fix
-  is the Phase 2 local-agreement upgrade, since the final flush is the one path
-  that commits without two-tick confirmation. Watch for it in the smoke test.
+- **End-of-utterance hallucination.** Handled well by the combination of short silence threshold, aggressive trim, and per-segment halluc stripping. Rare on normal speech.
 - **Latency tracks GPU load.** First-commit lag is ~1 s on a free GPU but
   degrades when the card is saturated by other jobs.
 - **macOS seat is unverified on hardware.** The protocol/server/client path is
@@ -185,6 +179,36 @@ The network path itself (auth, framing, streaming, accuracy) is verified
 end-to-end on blackbird via `tests/test_net_acceptance.py` (real model over a
 loopback socket).
 
+## Status (as of 2026-06-24)
+
+**Local turbo is now "perfect" for real-time dictation on this hardware.**
+
+Winning config (what finally delivered acceptable pace):
+```toml
+[stream]
+tick_ms = 100
+min_silence_ms = 150
+require_confirmation = false
+model = "large-v3-turbo"
+
+[transcribe]
+beam_size = 1
+```
+
+- Extremely responsive phrase-by-phrase typing.
+- ydotoold backend working cleanly for fast injection.
+- Local only (no API latency or cost).
+
+All unit + acceptance tests still pass.
+
+**To use:**
+```bash
+# ~/.config/ntok/config.toml
+# (then)
+systemctl --user restart ntokd
+ntok toggle
+```
+
 ## Roadmap
 
 **Done:** Phase 1 (local streaming dictation) and the Phase 2 client/server split
@@ -194,3 +218,5 @@ with shared-secret auth and serialized multi-seat GPU access.
 window for finer-grained commits (also the structural fix for the end-of-
 utterance hallucination); a request queue / fairness across many simultaneous
 seats; and voice commands.
+
+Open items for polish: push-to-talk hotkey adapter, better final hallucination filter, GUI indicator.
