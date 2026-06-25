@@ -4,15 +4,17 @@ version = "0.1.0"
 description = "Warm-daemon local Whisper dictation for Linux/Wayland (COSMIC, GNOME, sway, ...)"
 requires-python = ">=3.10"
 dependencies = [
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+server = [
     # 1.1+ adds the large-v3-turbo model id (optional low-latency stream model).
     "faster-whisper>=1.1.0",
-    "numpy>=1.24",
     # CUDA libs for CTranslate2 GPU inference (bundled, no system CUDA needed)
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12>=9.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "pytest>=7",
     "soundfile>=0.12",  # read/write the acceptance-test WAV fixture

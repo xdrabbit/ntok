@@ -143,7 +143,7 @@ seat (mic) ──audio──▶ ntok server (blackbird GPU) ──committed text
    ```toml
    [net]
    host = "0.0.0.0"            # serve the LAN (use 127.0.0.1 for local-only)
-   port = 8765
+   port = 6161
    token = "PASTE-A-SECRET"   # e.g. output of: openssl rand -hex 32
    ```
 2. Run it: `ntok server` (or install `systemd/ntok-server.service`; for an
@@ -155,18 +155,20 @@ Put the **same** token and the server's address in that machine's config:
 ```toml
 [net]
 server_host = "blackbird.local"   # or its LAN IP
-server_port = 8765
+server_port = 6161
 token = "PASTE-THE-SAME-SECRET"
 ```
 Run the seat daemon and bind a hotkey to the toggle:
 ```bash
-ntok client-daemon       # the thin seat (systemd: ntok-client.service on Linux)
+./install-client.sh      # Linux seat: installs ntok-client.service + ydotoold
+./install-mac-client.sh  # macOS seat: installs LaunchAgent + ffmpeg capture
 ntok client toggle       # bind your OS hotkey to this
 ntok client status|stop|cancel
 ```
 
-- **Linux seat** — reuses ydotool injection and parec mic capture (run
-  `install.sh` first for ydotool/uinput).
+- **Linux seat** — uses ydotool injection and parec mic capture. Use
+  `install-client.sh` for thin LAN clients; use `install.sh` only on a machine
+  that should run a local/server Whisper model.
 - **macOS seat** — captures via ffmpeg/avfoundation and injects via AppleScript
   `System Events`. You must: `brew install ffmpeg`; grant your terminal (or
   whatever runs `ntok client-daemon`) **Microphone** and **Accessibility**
@@ -174,10 +176,26 @@ ntok client status|stop|cancel
   (list with `ffmpeg -f avfoundation -list_devices true -i ""`). Bind the hotkey
   to `ntok client toggle` via Shortcuts/Automator/Karabiner. *(These macOS
   adapters are written but not yet hardware-tested — see Known limitations.)*
+- **Mac local fallback** — the supported default is still thin-client mode using
+  blackbird's 3090. A native Apple Metal fallback should be a separate backend
+  (for example MLX/Core ML) so normal Mac installs do not pull CUDA or server
+  wheels.
 
 The network path itself (auth, framing, streaming, accuracy) is verified
 end-to-end on blackbird via `tests/test_net_acceptance.py` (real model over a
 loopback socket).
+
+### Current LAN endpoint
+
+Blackbird runs the central transcription server on TCP `6161`. Seat machines
+should point `[net].server_host` at `blackbird.local`, the LAN IP, or the
+tailnet name if LAN mDNS is not available, and `[net].server_port` at `6161`.
+
+Python packaging is split for this topology:
+
+- `pip install -e .` installs only the thin-client core.
+- `pip install -e '.[server]'` installs Faster Whisper plus NVIDIA CUDA wheels
+  for the blackbird server.
 
 ## Status (as of 2026-06-24)
 

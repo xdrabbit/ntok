@@ -14,7 +14,7 @@ warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 say "1/6  Python venv + dependencies (this downloads CUDA libs, ~2 GB once)"
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip
-"$VENV/bin/pip" install --quiet -e "$PROJ"
+"$VENV/bin/pip" install --quiet -e "$PROJ[server]"
 
 # ----------------------------------------------------------------------------
 say "2/6  System packages (sudo): ydotool, wl-clipboard, libnotify"

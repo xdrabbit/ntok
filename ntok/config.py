@@ -62,11 +62,11 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # Server bind address. Default to 0.0.0.0 so it's accessible to all machines on the LAN.
         # Set to 127.0.0.1 if you only want local.
         "host": "0.0.0.0",
-        "port": 8765,
+        "port": 6161,
         "token": "",               # shared secret; REQUIRED — server won't serve empty
         # Client (each seat) — where to reach the server (use blackbird.local or LAN IP).
         "server_host": "127.0.0.1",
-        "server_port": 8765,
+        "server_port": 6161,
         "sample_rate": 16000,
     },
 }
@@ -149,11 +149,11 @@ notify = true
 # Server. Use host = "0.0.0.0" to serve all machines on the LAN (default now).
 # Set token to a shared secret (REQUIRED).
 host = "0.0.0.0"
-port = 8765
+port = 6161
 token = ""
 # Client (each seat) — point to the server (use hostname or LAN IP) and your mic rate.
 server_host = "127.0.0.1"
-server_port = 8765
+server_port = 6161
 sample_rate = 16000
 
 # API keys for cloud transcription backends (used when [model].backend = "openai" or "grok")
