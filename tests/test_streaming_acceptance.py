@@ -74,10 +74,12 @@ def _cfg():
     )
     cfg["model"]["name"] = model
     cfg["feedback"] = {"sound": False, "notify": False}
-    # Force ultra-aggressive low-latency params + fast model for this run.
+    # Pin the known-good streaming baseline (distil-large-v3 + confirmation),
+    # independent of the live latency-tuned config, so acceptance measures
+    # accuracy rather than tuning. Env override for fast iteration.
     model = (
         os.environ.get("NTOK_TEST_MODEL")
-        or "large-v3-turbo"
+        or "distil-large-v3"
     )
     cfg["model"]["name"] = model
     cfg["model"]["backend"] = "faster-whisper"  # use local for test (no API key)

@@ -10,6 +10,7 @@ contract — without needing a second machine.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -32,7 +33,21 @@ def running_server():
     from ntok.transcribe import Transcriber
 
     cfg = config.load()
-    cfg["model"]["name"] = cfg["stream"]["model"] or cfg["model"]["name"]
+    # Pin the known-good streaming baseline (distil-large-v3 + confirmation),
+    # independent of the live latency-tuned config, so this measures the network
+    # path's accuracy rather than the seat's aggressive tuning. Env override for
+    # fast iteration. The server runs the StreamingSession, so set stream params here.
+    cfg["model"]["name"] = os.environ.get("NTOK_TEST_MODEL") or "distil-large-v3"
+    cfg["model"]["backend"] = "faster-whisper"
+    s = cfg.setdefault("stream", {})
+    s["model"] = cfg["model"]["name"]
+    s["tick_ms"] = 200
+    s["min_silence_ms"] = 250
+    s["silence_rms"] = 0.006
+    s["vad_filter"] = False
+    s["final_vad_filter"] = True
+    s["require_confirmation"] = True
+    cfg["transcribe"]["beam_size"] = 2
     cfg["net"]["token"] = "test-secret"
     cfg["net"]["host"] = "127.0.0.1"
     cfg["net"]["port"] = 0

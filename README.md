@@ -217,7 +217,10 @@ beam_size = 1
 - ydotoold backend working cleanly for fast injection.
 - Local only (no API latency or cost).
 
-All unit + acceptance tests still pass.
+All tests pass: 53 Tier 1 (no-GPU) + 8 Tier 2 acceptance. Live dictation runs
+`large-v3-turbo` (lowest latency); the Tier 2 accuracy tests pin the
+`distil-large-v3` baseline (WER ≤ 0.15) so they measure accuracy independently
+of the seat's latency tuning.
 
 **To use:**
 ```bash
