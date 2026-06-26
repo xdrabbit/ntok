@@ -15,7 +15,6 @@ import os
 import signal
 import socket
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -31,15 +30,21 @@ def client_socket_path() -> Path:
     """Control-socket path for the thin client, resolved per-platform.
 
     Linux uses the systemd ``XDG_RUNTIME_DIR`` (``/run/user/<uid>``). macOS has
-    no such dir, so fall back to a per-user temp dir; ``NTOK_RUNTIME_DIR``
+    no such dir, so use a fixed per-user dir under ``$HOME``; ``NTOK_RUNTIME_DIR``
     overrides either. The daemon and every ``ntok client`` subcommand call this,
     so the bind path and the status/toggle path always agree.
+
+    NOTE (macOS): do NOT key off ``$TMPDIR`` — a hotkey bound via a sandboxed
+    launcher (Shortcuts/Automator) runs with a per-app ``$TMPDIR``
+    (``.../T/com.apple.shortcuts.../``) that differs from the daemon's, so it
+    would compute a different socket path and never find the running daemon.
+    ``$HOME`` is stable across those contexts.
     """
     override = os.environ.get("NTOK_RUNTIME_DIR")
     if override:
         base = Path(override)
     elif sys.platform == "darwin":
-        base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "ntok"
+        base = Path.home() / ".ntok"
     else:
         xdg = os.environ.get("XDG_RUNTIME_DIR")
         base = Path(xdg) if xdg else Path(f"/run/user/{os.getuid()}")

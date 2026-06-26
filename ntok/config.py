@@ -28,6 +28,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "sample_rate": 16000,
         "source": "",              # "" = default mic; else a PipeWire/Pulse source name
         "max_seconds": 300,        # hard cap on a single dictation
+        "gain_db": 0.0,            # macOS: software capture gain. Quiet interfaces
+                                   # (e.g. a USB audio interface at modest input gain)
+                                   # land near the silence threshold and get shredded
+                                   # into one-word fragments; +18..26 dB fixes it.
     },
     "transcribe": {
         "vad_filter": True,        # Silero VAD trims silence -> faster + cleaner (local only)
@@ -115,6 +119,8 @@ backend = "faster-whisper"  # faster-whisper (local GPU, best for low latency on
 sample_rate = 16000
 source = ""              # "" = default mic. List sources: `pactl list short sources`
 max_seconds = 300
+gain_db = 0.0            # macOS software capture gain. Bump to +18..26 if a quiet
+                         # interface gets transcribed as fragmented single words.
 
 [transcribe]
 vad_filter = true

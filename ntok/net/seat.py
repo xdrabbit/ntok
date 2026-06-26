@@ -13,7 +13,6 @@ Microphone permissions).
 
 from __future__ import annotations
 
-import json
 import os
 import platform
 import shutil
@@ -62,12 +61,19 @@ class _MacRecorder(Recorder):
 
     def _build_cmd(self) -> list[str]:
         device = self.source or ":0"  # ":<audio_index>" (empty video part)
-        return [
+        cmd = [
             getattr(self, "ffmpeg", "ffmpeg"), "-loglevel", "quiet",
             "-f", "avfoundation", "-i", device,
             "-ac", "1", "-ar", str(self.sample_rate),
-            "-f", "s16le", "-",
         ]
+        gain_db = getattr(self, "gain_db", 0.0)
+        if gain_db:
+            # Fixed gain to lift a quiet interface, plus a brick-wall limiter so the
+            # boost can't clip on loud transients. alimiter is causal (~5 ms attack),
+            # so this stays safe for low-latency streaming.
+            cmd += ["-af", f"volume={gain_db}dB,alimiter=limit=0.95"]
+        cmd += ["-f", "s16le", "-"]
+        return cmd
 
 
 def make_recorder(cfg: dict) -> Recorder:
@@ -77,14 +83,25 @@ def make_recorder(cfg: dict) -> Recorder:
     if IS_MAC:
         rec = _MacRecorder(sample_rate=sr, source=source, max_seconds=max_seconds)
         rec.ffmpeg = _find_ffmpeg(cfg)  # absolute path so launchd's bare PATH is moot
+        rec.gain_db = float(cfg["audio"].get("gain_db", 0.0))
         return rec
     return Recorder(sample_rate=sr, source=source, max_seconds=max_seconds)
 
 
+_MAC_KEYSTROKE_SCRIPT = (
+    "on run argv\n"
+    "  tell application \"System Events\" to keystroke (item 1 of argv)\n"
+    "end run"
+)
+
+
 def _mac_inject(delta: str) -> None:
     # AppleScript keystroke; needs Accessibility permission for the host app.
-    script = f'tell application "System Events" to keystroke {json.dumps(delta)}'
-    subprocess.run(["osascript", "-e", script], check=False)
+    # Pass the text as an argv item rather than interpolating it into the script
+    # source: that sidesteps AppleScript's string-literal parser, which rejects
+    # the \uXXXX escapes json.dumps emits for non-ASCII (smart quotes, em dashes,
+    # etc.) and was dropping those words with a -2741 syntax error.
+    subprocess.run(["osascript", "-e", _MAC_KEYSTROKE_SCRIPT, delta], check=False)
 
 
 def make_injector(cfg: dict):
