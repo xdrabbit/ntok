@@ -147,12 +147,11 @@ class StreamingSession:
                     t = t[: -len(h)].rstrip(" ,.!?")
                     changed = True
                     break
-        # Drop leading short fillers too (e.g. model saying "Hello." or "Listen." on silence gaps)
-        for _ in range(3):
-            low = t.lower().lstrip()
-            for f in ["hello", "hi", "hey", "listen", "well", "so", "um", "uh"]:
-                if low.startswith(f + " ") or low == f or low.startswith(f + ".") or low.startswith(f + ","):
-                    t = t[len(f):].lstrip(" .,")
+        # Drop a *standalone* filler the model emits over a silence gap (a lone
+        # "Hello." or "Listen.") — but never eat the first word of a real phrase,
+        # so only strip when the filler is the entire segment.
+        if t.lower().strip(" .,!?") in {"hello", "hi", "hey", "listen", "well", "so", "um", "uh"}:
+            t = ""
         low3 = t.lower().strip(".,!? ")
         fillers = {"i", "a", "the", "um", "uh", "ah", "er", "hmm", "mhm", "im", "i'm", "hello", "hi", "listen"}
         if len(low3) <= 3 or low3 in fillers or not any(c.isalpha() for c in low3):
