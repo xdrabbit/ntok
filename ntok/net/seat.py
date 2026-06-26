@@ -14,13 +14,43 @@ Microphone permissions).
 from __future__ import annotations
 
 import json
+import os
 import platform
+import shutil
 import subprocess
 
 from ..audio import Recorder
 from ..inject import append_text
 
 IS_MAC = platform.system() == "Darwin"
+
+# launchd gives a LaunchAgent a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that
+# excludes Homebrew, so a bare "ffmpeg" isn't found even after `brew install`.
+_FFMPEG_FALLBACKS = (
+    "/opt/homebrew/bin/ffmpeg",  # Apple Silicon Homebrew
+    "/usr/local/bin/ffmpeg",     # Intel Homebrew
+    "/opt/local/bin/ffmpeg",     # MacPorts
+)
+
+
+def _find_ffmpeg(cfg: dict | None = None) -> str:
+    """Resolve ffmpeg to an absolute path. Honors [audio].ffmpeg / $NTOK_FFMPEG,
+    then PATH, then known Homebrew/MacPorts locations (PATH is bare under launchd).
+    """
+    override = (cfg or {}).get("audio", {}).get("ffmpeg") or os.environ.get("NTOK_FFMPEG")
+    if override:
+        return override
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for p in _FFMPEG_FALLBACKS:
+        if os.path.exists(p):
+            return p
+    raise FileNotFoundError(
+        "ffmpeg not found. Install it (brew install ffmpeg) or set [audio].ffmpeg "
+        "in ~/.config/ntok/config.toml to its absolute path "
+        "(e.g. /opt/homebrew/bin/ffmpeg)."
+    )
 
 
 class _MacRecorder(Recorder):
@@ -33,7 +63,7 @@ class _MacRecorder(Recorder):
     def _build_cmd(self) -> list[str]:
         device = self.source or ":0"  # ":<audio_index>" (empty video part)
         return [
-            "ffmpeg", "-loglevel", "quiet",
+            getattr(self, "ffmpeg", "ffmpeg"), "-loglevel", "quiet",
             "-f", "avfoundation", "-i", device,
             "-ac", "1", "-ar", str(self.sample_rate),
             "-f", "s16le", "-",
@@ -45,7 +75,9 @@ def make_recorder(cfg: dict) -> Recorder:
     source = cfg["audio"].get("source", "")
     max_seconds = cfg["audio"]["max_seconds"]
     if IS_MAC:
-        return _MacRecorder(sample_rate=sr, source=source, max_seconds=max_seconds)
+        rec = _MacRecorder(sample_rate=sr, source=source, max_seconds=max_seconds)
+        rec.ffmpeg = _find_ffmpeg(cfg)  # absolute path so launchd's bare PATH is moot
+        return rec
     return Recorder(sample_rate=sr, source=source, max_seconds=max_seconds)
 
 
