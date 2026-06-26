@@ -88,19 +88,30 @@ def make_recorder(cfg: dict) -> Recorder:
     return Recorder(sample_rate=sr, source=source, max_seconds=max_seconds)
 
 
+# Types the argv text, pressing Return (key code 36) for each newline. `keystroke`
+# cannot emit a Return from a literal "\n" — the newline is silently swallowed — so
+# spoken "new line" / "new paragraph" produced no break until we split on LF and
+# send real Return key presses. Text is passed as an argv item (not interpolated
+# into the script source) to sidestep AppleScript's string-literal parser, which
+# rejects the \uXXXX escapes other encodings emit for non-ASCII (smart quotes, em
+# dashes) with a -2741 error that dropped those words.
 _MAC_KEYSTROKE_SCRIPT = (
     "on run argv\n"
-    "  tell application \"System Events\" to keystroke (item 1 of argv)\n"
+    "  set t to item 1 of argv\n"
+    "  set AppleScript's text item delimiters to (ASCII character 10)\n"
+    "  set parts to text items of t\n"
+    "  set AppleScript's text item delimiters to \"\"\n"
+    "  repeat with i from 1 to count of parts\n"
+    "    if i > 1 then tell application \"System Events\" to key code 36\n"
+    "    set p to item i of parts\n"
+    "    if p is not \"\" then tell application \"System Events\" to keystroke p\n"
+    "  end repeat\n"
     "end run"
 )
 
 
 def _mac_inject(delta: str) -> None:
     # AppleScript keystroke; needs Accessibility permission for the host app.
-    # Pass the text as an argv item rather than interpolating it into the script
-    # source: that sidesteps AppleScript's string-literal parser, which rejects
-    # the \uXXXX escapes json.dumps emits for non-ASCII (smart quotes, em dashes,
-    # etc.) and was dropping those words with a -2741 syntax error.
     subprocess.run(["osascript", "-e", _MAC_KEYSTROKE_SCRIPT, delta], check=False)
 
 
