@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -26,8 +27,22 @@ from .client import Client
 
 
 def client_socket_path() -> Path:
-    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return Path(runtime) / "ntok-client.sock"
+    """Control-socket path for the thin client, resolved per-platform.
+
+    Linux uses the systemd ``XDG_RUNTIME_DIR`` (``/run/user/<uid>``). macOS has
+    no such dir, so fall back to a per-user temp dir; ``NTOK_RUNTIME_DIR``
+    overrides either. The daemon and every ``ntok client`` subcommand call this,
+    so the bind path and the status/toggle path always agree.
+    """
+    override = os.environ.get("NTOK_RUNTIME_DIR")
+    if override:
+        base = Path(override)
+    elif sys.platform == "darwin":
+        base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "ntok"
+    else:
+        xdg = os.environ.get("XDG_RUNTIME_DIR")
+        base = Path(xdg) if xdg else Path(f"/run/user/{os.getuid()}")
+    return base / "ntok-client.sock"
 
 
 def _pcm_bytes(pcm: np.ndarray) -> bytes:
@@ -132,6 +147,7 @@ class ClientDaemon:
     # -- server loop --------------------------------------------------------
     def serve(self) -> None:
         path = client_socket_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             path.unlink()
         srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
