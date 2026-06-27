@@ -118,7 +118,7 @@ max_seconds = 300
 
 [transcribe]
 vad_filter = true
-beam_size = 1            # max speed (accuracy secondary)
+beam_size = 5            # beam search for accuracy (GPU has headroom)
 initial_prompt = ""      # e.g. "Kubernetes, Postgres, ntok" to bias spelling
 openai_model = "whisper-1"
 grok_model = "grok-stt"
