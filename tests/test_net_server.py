@@ -33,6 +33,12 @@ def _cfg(token="secret"):
     cfg["net"]["host"] = "127.0.0.1"
     cfg["net"]["port"] = 0  # ephemeral
     cfg["feedback"] = {"sound": False, "notify": False}
+    # Pin the output-shaping knobs so this roundtrip stays hermetic regardless of
+    # the machine's live ~/.config/ntok/config.toml (blackbird runs with
+    # spoken_punctuation=true): the fake transcriber returns verbatim
+    # "hello world" and that's exactly what we assert on.
+    cfg["stream"]["spoken_punctuation"] = False
+    cfg["inject"]["capitalize_first"] = False
     return cfg
 
 

@@ -75,6 +75,7 @@ class StreamingSession:
             min_silence_s=s.get("min_silence_ms", 500) / 1000.0,
             require_confirmation=s.get("require_confirmation", True),
             capitalize_first=cfg["inject"].get("capitalize_first", False),
+            spoken_punctuation=s.get("spoken_punctuation", False),
         )
 
         self._buffer = np.zeros(0, dtype=np.float32)
@@ -96,7 +97,7 @@ class StreamingSession:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=30)
-        txt = self.engine.committed_text
+        txt = self.engine.output_text
         return self._strip_halluc(txt)
 
     def cancel(self) -> None:
@@ -108,7 +109,7 @@ class StreamingSession:
 
     @property
     def transcript(self) -> str:
-        return self.engine.committed_text
+        return self.engine.output_text
 
     _HALLUC_END = (
         "thank you", "thank you.", "thanks", "thank you for watching", "thanks for watching",

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .textutil import dedup_overlap, normalize
+from .textutil import FlowFormatter, dedup_overlap, normalize
 
 
 @dataclass
@@ -59,15 +59,25 @@ class CommitEngine:
         require_confirmation: bool = True,
         capitalize_first: bool = False,
         max_overlap_tokens: int = 8,
+        spoken_punctuation: bool = False,
     ):
         self.min_silence_s = min_silence_s
         self.require_confirmation = require_confirmation
         self.capitalize_first = capitalize_first
         self.max_overlap_tokens = max_overlap_tokens
+        # Flow + spoken-punctuation mode (default off). When on, the verbatim
+        # spacing/capitalization below is bypassed and committed phrases are run
+        # through a stateful transform instead.
+        self.flow: FlowFormatter | None = FlowFormatter() if spoken_punctuation else None
 
-        self.committed_text = ""        # concatenation of every delta emitted
+        self.committed_text = ""        # raw committed phrases (dedup + prompt context)
         self._prev_norm: list[str] = []  # normalized segment texts seen last tick
         self._emitted = False
+
+    @property
+    def output_text(self) -> str:
+        """The text actually emitted to the sink (flow-formatted when on)."""
+        return self.flow.text if self.flow is not None else self.committed_text
 
     # -- public API ---------------------------------------------------------
     def step(
@@ -92,7 +102,12 @@ class CommitEngine:
         """
         if not segments:
             # Nothing transcribed. Keep prior confirmation state on a normal
-            # tick; on end-of-audio there is simply nothing left to flush.
+            # tick; on end-of-audio, drain any token the flow transform is still
+            # holding (a dangling command prefix) so it isn't lost.
+            if ended:
+                tail = self._flush_flow()
+                if tail:
+                    return StepResult(deltas=[tail])
             return StepResult()
 
         cur_norm = [normalize(s.text) for s in segments]
@@ -113,6 +128,10 @@ class CommitEngine:
             delta = self._present(seg.text)
             if delta:
                 deltas.append(delta)
+        if ended:
+            tail = self._flush_flow()
+            if tail:
+                deltas.append(tail)
 
         advance = min(segments[commit_count - 1].end, buffer_duration)
         # The uncommitted remainder becomes next tick's confirmation baseline,
@@ -166,6 +185,13 @@ class CommitEngine:
         # Whisper emits over near-silence — they carry no real word tokens.
         if not phrase or not normalize(phrase):
             return ""
+        if self.flow is not None:
+            # Keep committed_text as the *raw* committed phrases so dedup_overlap
+            # and the Whisper prompt still see the spoken command words; the flow
+            # transform owns the actual emitted (and possibly buffered) output.
+            self.committed_text += (" " + phrase) if self._emitted else phrase
+            self._emitted = True
+            return self.flow.feed(phrase)
         if not self._emitted:
             if self.capitalize_first:
                 phrase = phrase[0].upper() + phrase[1:]
@@ -175,3 +201,7 @@ class CommitEngine:
         self.committed_text += delta
         self._emitted = True
         return delta
+
+    def _flush_flow(self) -> str:
+        """Drain any token the flow transform is buffering (end-of-audio only)."""
+        return self.flow.flush() if self.flow is not None else ""

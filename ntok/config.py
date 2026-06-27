@@ -33,6 +33,15 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "vad_filter": True,        # Silero VAD trims silence -> faster + cleaner (local only)
         "beam_size": 5,  # beam search for accuracy; GPU has headroom for real-time streaming
         "initial_prompt": "",      # bias vocabulary, e.g. proper nouns you use
+        # VAD edge padding (only applied when a VAD filter is active). Raise
+        # speech_pad_ms if first/last words get clipped; lower it if leading
+        # silence/hallucination creeps in.
+        "speech_pad_ms": 400,
+        "vad_min_silence_ms": 2000,  # gap (ms) before VAD counts it as a pause
+        # Drop near-silent / hallucinated tail segments. Library default 0.6; a
+        # segment is suppressed when its no-speech prob exceeds this, so LOWER it
+        # (toward 0.4) to drop more phantom trailing words, raise it to keep more.
+        "no_speech_threshold": 0.6,
         "openai_model": "whisper-1",  # for backend=openai
         "grok_model": "grok-stt",  # for backend=grok; use grok-stt or latest
     },
@@ -46,6 +55,12 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "model": "large-v3-turbo",  # excellent speed/quality for low-latency streaming
         "continuous_listen": False,
         "final_vad_filter": True,
+        # Flow + spoken-punctuation dictation. When true, committed text is NOT
+        # auto-capitalized/auto-terminated per fragment; words flow continuously
+        # and the speaker dictates punctuation ("period", "comma", "new
+        # paragraph", "cap <word>", …). Server-side only; needs no client change.
+        # Default off so existing behavior + acceptance baselines are unchanged.
+        "spoken_punctuation": False,
     },
     "inject": {
         "method": "type",          # "type" (universal) | "paste" (fast, uses clipboard)
@@ -120,6 +135,9 @@ max_seconds = 300
 vad_filter = true
 beam_size = 5            # beam search for accuracy (GPU has headroom)
 initial_prompt = ""      # e.g. "Kubernetes, Postgres, ntok" to bias spelling
+speech_pad_ms = 400      # ↑ if first/last words get clipped; ↓ if leading silence creeps in
+vad_min_silence_ms = 2000  # gap (ms) before VAD counts it as a pause
+no_speech_threshold = 0.6  # ↓ toward 0.4 to drop more phantom trailing words
 openai_model = "whisper-1"
 grok_model = "grok-stt"
 
@@ -133,6 +151,7 @@ max_buffer_seconds = 28
 model = "large-v3-turbo"   # great speed/quality balance for dictation
 continuous_listen = false
 final_vad_filter = true
+spoken_punctuation = false  # flow mode: speak punctuation ("period", "new paragraph", "cap <word>")
 
 [inject]
 method = "type"          # type | paste

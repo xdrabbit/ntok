@@ -78,7 +78,13 @@ class Transcriber:
 
     def _prompt(self, extra: str = "") -> str | None:
         t = self.cfg.get("transcribe", {})
-        p = extra or t.get("initial_prompt", "") or ""
+        # Merge the configured vocab-bias prompt with any per-call context. Both
+        # matter and must coexist: the config biases out-of-vocabulary words like
+        # "ntok"; ``extra`` carries the streaming engine's committed left-context
+        # (and anti-hallucination priming). The old ``extra or config`` form
+        # silently dropped the config prompt whenever streaming supplied context.
+        base = t.get("initial_prompt", "") or ""
+        p = " ".join(s for s in (base, extra) if s).strip()
         if self._backend in ("openai", "grok"):
             # Prime against repetitive "thank you" / closing hallucinations common in silence tails.
             anti = " Accurate verbatim transcription of spoken words only. Never append 'thank you', 'thanks', 'the end', 'okay', 'you', or any closing statements."
@@ -94,6 +100,23 @@ class Transcriber:
         t = self.cfg.get("transcribe", {})
         lang = self._language()
         vf = t.get("vad_filter", True) if vf is None else vf
+        extra: dict[str, Any] = {}
+        if vf:
+            # Pad detected speech so Silero VAD doesn't shave word edges (the
+            # clipped-first/last-word problem). speech_pad_ms widens each speech
+            # region; vad_min_silence_ms is how long a gap must be before VAD
+            # treats it as a real pause. Both configurable so they can be nudged
+            # without a code change.
+            extra["vad_parameters"] = {
+                "speech_pad_ms": int(t.get("speech_pad_ms", 400)),
+                "min_silence_duration_ms": int(t.get("vad_min_silence_ms", 2000)),
+            }
+        # When set, raises Whisper's confidence bar for emitting a segment over a
+        # near-silent tail — drops phantom trailing words/hallucinations. Left at
+        # the library default (0.6) unless overridden in config.
+        nst = t.get("no_speech_threshold", None)
+        if nst is not None:
+            extra["no_speech_threshold"] = float(nst)
         segments, _info = self._local.transcribe(
             audio,
             language=lang,
@@ -101,6 +124,7 @@ class Transcriber:
             vad_filter=vf,
             initial_prompt=self._prompt(initial_prompt),
             condition_on_previous_text=False,
+            **extra,
         )
         if want_segments:
             return [(seg.start, seg.end, seg.text) for seg in segments]
