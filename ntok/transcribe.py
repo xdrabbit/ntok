@@ -117,6 +117,21 @@ class Transcriber:
         nst = t.get("no_speech_threshold", None)
         if nst is not None:
             extra["no_speech_threshold"] = float(nst)
+        # Anti-hallucination thresholds. faster-whisper retries a segment at the
+        # next fallback temperature when it trips either of these, and DROPS it if
+        # no temperature satisfies them:
+        #   compression_ratio_threshold — text too repetitive (gzip ratio above
+        #     this) is treated as a hallucination. Primary killer for repeated
+        #     stock phrases like "subtitles by the amara.org community".
+        #   log_prob_threshold — average token logprob below this means the model
+        #     was guessing; low-confidence phantom tails score low and get dropped.
+        # Both opt-in via config so they can be nudged without a code change.
+        crt = t.get("compression_ratio_threshold", None)
+        if crt is not None:
+            extra["compression_ratio_threshold"] = float(crt)
+        lpt = t.get("log_prob_threshold", None)
+        if lpt is not None:
+            extra["log_prob_threshold"] = float(lpt)
         segments, _info = self._local.transcribe(
             audio,
             language=lang,

@@ -41,7 +41,14 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         # Drop near-silent / hallucinated tail segments. Library default 0.6; a
         # segment is suppressed when its no-speech prob exceeds this, so LOWER it
         # (toward 0.4) to drop more phantom trailing words, raise it to keep more.
-        "no_speech_threshold": 0.6,
+        "no_speech_threshold": 0.4,
+        # Anti-hallucination thresholds (faster-whisper). A segment that trips
+        # either is retried at higher fallback temperatures and dropped if none
+        # pass. compression_ratio_threshold kills repetitive stock-phrase
+        # hallucinations ("subtitles by the amara.org community"); log_prob_threshold
+        # drops low-confidence phantom tails. Standard whisper defaults.
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
         "openai_model": "whisper-1",  # for backend=openai
         "grok_model": "grok-stt",  # for backend=grok; use grok-stt or latest
     },
@@ -49,7 +56,10 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "tick_ms": 100,            # very frequent checks for snappy phrase commits
         "min_silence_ms": 150,     # short pause after last word → write fast
         "require_confirmation": False,  # no confirmation delay
-        "vad_filter": False,
+        # VAD ON for per-tick streaming: silent buffers must not reach Whisper or
+        # it invents stock-phrase hallucinations. Edge-clipping is handled by
+        # [transcribe].speech_pad_ms, not by disabling VAD.
+        "vad_filter": True,
         "silence_rms": 0.01,
         "max_buffer_seconds": 28,
         "model": "large-v3-turbo",  # excellent speed/quality for low-latency streaming
@@ -137,7 +147,9 @@ beam_size = 5            # beam search for accuracy (GPU has headroom)
 initial_prompt = ""      # e.g. "Kubernetes, Postgres, ntok" to bias spelling
 speech_pad_ms = 400      # ↑ if first/last words get clipped; ↓ if leading silence creeps in
 vad_min_silence_ms = 2000  # gap (ms) before VAD counts it as a pause
-no_speech_threshold = 0.6  # ↓ toward 0.4 to drop more phantom trailing words
+no_speech_threshold = 0.4  # ↓ to drop more phantom trailing words (raise toward 0.6 to keep more)
+compression_ratio_threshold = 2.4  # drop too-repetitive segments (stock-phrase hallucinations); ↓ = stricter
+log_prob_threshold = -1.0  # drop low-confidence segments (phantom tails); raise toward -0.5 to be stricter
 openai_model = "whisper-1"
 grok_model = "grok-stt"
 
@@ -145,7 +157,7 @@ grok_model = "grok-stt"
 tick_ms = 100              # very frequent checks → snappy response
 min_silence_ms = 150       # short pause after last word → commit & write fast
 require_confirmation = false
-vad_filter = false
+vad_filter = true          # VAD on per-tick: silent buffers shouldn't reach Whisper (kills hallucination). Edges protected by [transcribe].speech_pad_ms.
 silence_rms = 0.01
 max_buffer_seconds = 28
 model = "large-v3-turbo"   # great speed/quality balance for dictation
