@@ -31,7 +31,7 @@ DEFAULTS: dict[str, dict[str, Any]] = {
     },
     "transcribe": {
         "vad_filter": True,        # Silero VAD trims silence -> faster + cleaner (local only)
-        "beam_size": 1,  # maximum speed (accuracy is secondary for real-time dictation)
+        "beam_size": 5,  # beam search for accuracy; GPU has headroom for real-time streaming
         "initial_prompt": "",      # bias vocabulary, e.g. proper nouns you use
         "openai_model": "whisper-1",  # for backend=openai
         "grok_model": "grok-stt",  # for backend=grok; use grok-stt or latest
