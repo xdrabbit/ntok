@@ -113,9 +113,9 @@ What it *can't* test is the felt experience: do the manual mic smoke test below.
 - **End-of-utterance hallucination.** Handled well by the combination of short silence threshold, aggressive trim, and per-segment halluc stripping. Rare on normal speech.
 - **Latency tracks GPU load.** First-commit lag is ~1 s on a free GPU but
   degrades when the card is saturated by other jobs.
-- **macOS seat is unverified on hardware.** The protocol/server/client path is
-  tested end-to-end on blackbird, but the macOS mic (ffmpeg/avfoundation) and
-  injection (AppleScript) adapters have not been run on a real Mac yet.
+- **macOS seats** are working (tested on Scout MacBook Air against blackbird).
+  See `docs/macOS-seat-client.md` and `docs/fully-hands-off-macos-launchd.md` for
+  the clean launch (nohup or launchd), permissions, XDG setup, and avfoundation source.
 
 ### Manual smoke test
 
@@ -161,7 +161,7 @@ token = "PASTE-THE-SAME-SECRET"
 Run the seat daemon and bind a hotkey to the toggle:
 ```bash
 ./install-client.sh      # Linux seat: installs ntok-client.service + ydotoold
-./install-mac-client.sh  # macOS seat: installs LaunchAgent + ffmpeg capture
+# macOS seat: see docs/macOS-seat-client.md (start-client.sh or launchd)
 ntok client toggle       # bind your OS hotkey to this
 ntok client status|stop|cancel
 ```
@@ -170,12 +170,13 @@ ntok client status|stop|cancel
   `install-client.sh` for thin LAN clients; use `install.sh` only on a machine
   that should run a local/server Whisper model.
 - **macOS seat** — captures via ffmpeg/avfoundation and injects via AppleScript
-  `System Events`. You must: `brew install ffmpeg`; grant your terminal (or
-  whatever runs `ntok client-daemon`) **Microphone** and **Accessibility**
-  permissions; and set `[audio].source` to your mic's avfoundation index
-  (list with `ffmpeg -f avfoundation -list_devices true -i ""`). Bind the hotkey
-  to `ntok client toggle` via Shortcuts/Automator/Karabiner. *(These macOS
-  adapters are written but not yet hardware-tested — see Known limitations.)*
+  `System Events`. `brew install ffmpeg`; grant Terminal **Microphone** +
+  **Accessibility** perms in System Settings; use `[audio] source = ":0"` (or
+  list with `ffmpeg -f avfoundation -list_devices true -i ""`). Use the provided
+  `start-client.sh` (or launchd plist) for reliable detached daemon. See
+  `docs/macOS-seat-client.md` (and fully-hands-off doc). Tested successfully on
+  wireless Scout seat → blackbird (often snappier than wired setups with the
+  low-latency tunings).
 - **Mac local fallback** — the supported default is still thin-client mode using
   blackbird's 3090. A native Apple Metal fallback should be a separate backend
   (for example MLX/Core ML) so normal Mac installs do not pull CUDA or server
@@ -235,9 +236,10 @@ ntok toggle
 **Done:** Phase 1 (local streaming dictation) and the Phase 2 client/server split
 with shared-secret auth and serialized multi-seat GPU access.
 
-**Next:** verify the macOS seat on real hardware; a local-agreement sliding
-window for finer-grained commits (also the structural fix for the end-of-
-utterance hallucination); a request queue / fairness across many simultaneous
-seats; and voice commands.
+**Next:** a local-agreement sliding window for finer-grained commits (also the
+structural fix for the end-of-utterance hallucination); a request queue /
+fairness across many simultaneous seats; and voice commands.
+
+macOS seats verified on real hardware (Scout + blackbird LAN).
 
 Open items for polish: push-to-talk hotkey adapter, better final hallucination filter, GUI indicator.

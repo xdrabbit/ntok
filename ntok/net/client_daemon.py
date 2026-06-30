@@ -30,19 +30,25 @@ from .client import Client
 def client_socket_path() -> Path:
     """Control-socket path for the thin client, resolved per-platform.
 
-    Linux uses the systemd ``XDG_RUNTIME_DIR`` (``/run/user/<uid>``). macOS has
-    no such dir, so fall back to a per-user temp dir; ``NTOK_RUNTIME_DIR``
-    overrides either. The daemon and every ``ntok client`` subcommand call this,
-    so the bind path and the status/toggle path always agree.
+    Prefers NTOK_RUNTIME_DIR if set (explicit override).
+    Honors XDG_RUNTIME_DIR when exported (used by launch scripts + docs for
+    consistent path across Linux and macOS seats).
+    On macOS without XDG, falls back to a per-user writable dir under TMPDIR.
+    Always ensures the directory exists (mkdir -p). The client-daemon and
+    every `ntok client` subcommand call this, so bind/listen and connect agree.
     """
     override = os.environ.get("NTOK_RUNTIME_DIR")
     if override:
         base = Path(override)
-    elif sys.platform == "darwin":
-        base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "ntok"
     else:
         xdg = os.environ.get("XDG_RUNTIME_DIR")
-        base = Path(xdg) if xdg else Path(f"/run/user/{os.getuid()}")
+        if xdg:
+            base = Path(xdg)
+        elif sys.platform == "darwin":
+            base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "ntok-runtime"
+        else:
+            base = Path(f"/run/user/{os.getuid()}")
+    base.mkdir(parents=True, exist_ok=True)
     return base / "ntok-client.sock"
 
 
