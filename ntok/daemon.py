@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -22,8 +23,26 @@ from .transcribe import Transcriber
 
 
 def socket_path() -> Path:
-    runtime = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    return Path(runtime) / "ntok.sock"
+    """Unix socket path for the main daemon.
+
+    Same resolution rules as client_socket_path (see net/client_daemon.py):
+    NTOK_RUNTIME_DIR > XDG_RUNTIME_DIR > darwin TMPDIR/ntok-runtime > linux /run/user.
+    Ensures the dir exists so launchd / manual starts don't race.
+    """
+    override = os.environ.get("NTOK_RUNTIME_DIR")
+    if override:
+        base = Path(override)
+    else:
+        xdg = os.environ.get("XDG_RUNTIME_DIR")
+        if xdg:
+            base = Path(xdg)
+        elif sys.platform == "darwin":
+            # macOS fallback (no /run/user). Match the client and our launch scripts.
+            base = Path(os.environ.get("TMPDIR", tempfile.gettempdir())) / "ntok-runtime"
+        else:
+            base = Path(f"/run/user/{os.getuid()}")
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "ntok.sock"
 
 
 class _MicSource:

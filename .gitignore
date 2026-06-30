@@ -19,3 +19,6 @@ tests/fixtures/*.wav
 tests/fixtures/*.txt
 models/
 *.ct2
+
+# Transient session notes / grok logs (not part of the source)
+docs/grok-session-*.md
